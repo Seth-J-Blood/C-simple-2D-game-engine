@@ -1,35 +1,23 @@
 #include "tiles.h"
-#include <string.h>     // string copy, string concatenate
-#include <stdio.h>      // sprintf()
 
-uint16_t internal_flags = 0x0000;
-TCHAR internal_directory[MAX_PATH];         // contains the directory of the .exe file and a null-terminator character
-uint32_t internal_lastError = 0;
-TCHAR internal_current_directory[MAX_PATH];
-HDC internal_hdc;
+static uint16_t internal_flags = 0x0000;
+static TCHAR internal_current_directory[MAX_PATH];
+static TCHAR internal_directory[MAX_PATH];         // contains the directory of the .exe file and a null-terminator character
+static uint32_t internal_lastError = 0;
+static HDC internal_hdc;
 
-BITMAPINFO internal_bufferBitmapInfo = {
-    .bmiHeader = {
-        .biSize = sizeof(BITMAPINFOHEADER),
-        .biWidth = TILE_IMAGE_WIDTH,
-        .biHeight = -TILE_IMAGE_WIDTH,
-        .biPlanes = 1,
-        .biBitCount = 32,
-        .biCompression = BI_RGB,
-        .biSizeImage = 0,   // DON'T NEED TO FILL OUT - UNCOMPRESSED IMAGE
-        .biXPelsPerMeter = 0,
-        .biYPelsPerMeter = 0,
-        .biClrUsed = 0,
-        .biClrImportant = 0
-    },
-    .bmiColors = 0
-};
 
 uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY) {
     // if tiles was already initialized, don't do anything //
     if (internal_flags & TILE_FLAG_INITIALIZED) {
         internal_lastError = TILE_ERR_ALREADY_INITIALIZED;
         return TILE_ERR_ALREADY_INITIALIZED;
+    }
+
+    uint32_t initError = imageloader_init(hdc);
+    if (initError != IMGLDR_ERR_SUCCESS && initError != IMGLDR_ERR_ALREADY_INITIALIZED) {
+        internal_lastError = TILE_ERR_IMAGELOADER_FAILED_INIT;
+        return TILE_ERR_IMAGELOADER_FAILED_INIT;
     }
 
     internal_hdc = hdc;
@@ -47,13 +35,6 @@ uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY) {
 
     // LOAD IMAGES INTO MEMORY //   
     for (uint16_t i = 0; i < NUM_TILE_IMAGES; i++) {
-        // reserve space for tileBitmapInfos.pixels in memory //
-        tileBitmapInfos[i].pixels = malloc(TILE_IMAGE_HEIGHT * TILE_IMAGE_WIDTH * sizeof(uint32_t));
-        if (tileBitmapInfos[i].pixels == NULL) {
-            internal_lastError = TILE_ERR_NO_MEMORY;
-            return TILE_ERR_NO_MEMORY;
-        }
-
         //memset(tileBitmapInfos[i].pixels, 0x00FF00FF, TILE_IMAGE_HEIGHT * TILE_IMAGE_WIDTH * sizeof(uint32_t));
 
         // load string "[directory]/images/tiles/floors/tile[i].bmp" into internal_current_directory. Use snprintf to prevent buffer overflow
@@ -62,16 +43,15 @@ uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY) {
             MessageBox(NULL, internal_current_directory, "Debug box", MB_ICONEXCLAMATION);
             continue;
         }
-        HBITMAP image = LoadImageA(NULL, internal_current_directory, IMAGE_BITMAP, TILE_IMAGE_WIDTH, TILE_IMAGE_HEIGHT, LR_LOADFROMFILE);
-        if (image == NULL) {
+        
+        if (imageLoader_newImage_output(internal_current_directory, TILE_IMAGE_WIDTH, TILE_IMAGE_HEIGHT, &tileBitmapInfos[i].pixels) == IMGLDR_INVALID_IMAGE) {
+            MessageBox(NULL, "Directory2 failed!", "Debug box", MB_ICONEXCLAMATION);
+            MessageBox(NULL, internal_current_directory, "Debug box", MB_ICONEXCLAMATION);
+            TCHAR message[24];
+            snprintf(message, 24, "Error: 0x%X", imageLoader_getLastError());
+            MessageBox(NULL, message, "Debug box", MB_ICONEXCLAMATION);
             break;
         }
-
-        //tileBitmapInfos[i].sizeX = TILE_IMAGE_WIDTH;
-        //tileBitmapInfos[i].sizeY = TILE_IMAGE_HEIGHT;
-        GetDIBits(hdc, image, 0, TILE_IMAGE_HEIGHT, tileBitmapInfos[i].pixels, &internal_bufferBitmapInfo, DIB_RGB_COLORS);
-
-        DeleteObject(image);
     }
 
     // ALLOCATE TILEMAP
@@ -81,9 +61,18 @@ uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY) {
     }
 
     // SET TILEMAP TO ALL GRASS
-    memset(tile_map, 0x00010000, sizeof(struct tile) * mapSizeX * mapSizeY);
-
+    for (uint32_t y = 0; y < TILE_MAP_HEIGHT; y++) {
+        for (uint32_t x = 0; x < TILE_MAP_WIDTH; x++) {
+            struct tile temp = {
+                .tileId = 1,
+                .extra = 0,
+                .flags = 0
+            };
+            tile_map[(y * TILE_MAP_WIDTH) + x] = temp;
+        }
+    }
     internal_flags |= TILE_FLAG_INITIALIZED;
+    internal_lastError = TILE_ERR_SUCCESS;
     return TILE_ERR_SUCCESS;
 }
 
@@ -96,6 +85,7 @@ uint32_t* tile_getBitmapFromID(uint16_t tileId) {
         return NULL;
     }
 
+    internal_lastError = TILE_ERR_SUCCESS;
     return tileBitmapInfos[tileId - 1].pixels;
 }
 
@@ -107,12 +97,13 @@ uint32_t tile_close() {
     }
 
     // deallocate tile bitmaps
-    for (int i = 0; i < 255; i++) {
+    for (int i = 0; i < 256; i++) {
         free(tileBitmapInfos[i].pixels);
     }
 
     // deallocate tile_map
     free(tile_map);
 
+    internal_lastError = TILE_ERR_SUCCESS;
     return TILE_ERR_SUCCESS;
 }

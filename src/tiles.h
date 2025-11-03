@@ -1,9 +1,10 @@
 #include "imageLoader.h"
+#include <stdio.h>      // sprintf()
 
 #ifndef SETH_B_2D_GAME
 #define SETH_B_2D_GAME
 
-#define NUM_TILE_IMAGES                     1
+#define NUM_TILE_IMAGES                     8
 #define EXE_FILENAME_LENGTH                 4 + 3 // "main.exe"
 
 #define TILE_FLAG_INITIALIZED               0x0001
@@ -15,12 +16,13 @@
 #define TILE_ERR_ALREADY_INITIALIZED        4
 #define TILE_ERR_DIRECTORY_DAMAGED          5
 #define TILE_ERR_NO_MEMORY                  6
+#define TILE_ERR_IMAGELOADER_FAILED_INIT    7
 
 #define TILE_IMAGE_WIDTH                    32
 #define TILE_IMAGE_HEIGHT                   32
 
-#define TILE_MAP_WIDTH                      32
-#define TILE_MAP_HEIGHT                     8
+#define TILE_MAP_WIDTH                      16
+#define TILE_MAP_HEIGHT                     16
 
 #define COLOR_TRANSPARENT_VALUE             0x00FF00FF
 
@@ -31,7 +33,7 @@ struct tile_Image {
     //uint16_t sizeY;
     uint32_t* pixels;
 };
-struct tile_Image tileBitmapInfos[255]; // an array of tile images corresponding to (tileId - 1) (as zero doesn't need an image)
+struct tile_Image tileBitmapInfos[256]; // an array of tile images corresponding to (tileId - 1) (as zero doesn't need an image)
 
 struct tile {
     uint16_t tileId;

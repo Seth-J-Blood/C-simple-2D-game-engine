@@ -1,4 +1,8 @@
 #include "tiles.h"
+#include "entities.h"
+
+#define VIEWPORT_WIDTH      8
+#define VIEWPORT_HEIGHT     8
 
 // GLOBAL VARIABLES //
 HWND winHandle;             // a handle to the window associated with this program
@@ -35,6 +39,8 @@ uint16_t screenSizeX = 0;       // how big the maximum width is, in pixels
 uint16_t screenSizeY = 0;       // how big the maximum height is, in pixels
 uint32_t* bufferBitmap = NULL;  // an array that contains the values of the buffer bitmap
 uint32_t isStarted = 0;
+uint32_t camX = 0;
+uint32_t camY = 0;
 
 // FUNCTION PROTOTYPES //
 void cleanup();
@@ -44,6 +50,28 @@ void showLastError(const char*);
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+        case WM_KEYDOWN: {
+            switch (wParam) {
+                case VK_UP:
+                    if (camY > 0)
+                        camY--;
+                    break;
+                case VK_LEFT:
+                    if (camX > 0)
+                        camX--;
+                    break;
+                case VK_DOWN:
+                    if (camY < (TILE_MAP_HEIGHT - VIEWPORT_HEIGHT) * TILE_IMAGE_HEIGHT)
+                        camY++;
+                    break;
+                case VK_RIGHT:
+                    if (camX < (TILE_MAP_WIDTH - VIEWPORT_WIDTH) * TILE_IMAGE_WIDTH)
+                        camX++;
+                    break;
+            }
+        }
+        InvalidateRect(winHandle, &dispDimensions, FALSE);
+        return 0;
         case WM_SIZE: {
             // handle resizing //
         }
@@ -155,7 +183,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
     UpdateWindow(winHandle);
     
     // INITIALIZE TILES
-    if (tile_init(bufferHdc, TILE_MAP_WIDTH, TILE_MAP_HEIGHT) != TILE_ERR_SUCCESS) {
+    uint32_t errorCode = 0;
+    if ((errorCode = tile_init(bufferHdc, TILE_MAP_WIDTH, TILE_MAP_HEIGHT)) != TILE_ERR_SUCCESS) {
         MessageBox(NULL, "Error: tile_init failed!", "Debug box", MB_ICONWARNING);
         cleanup();
         return -1;
@@ -163,6 +192,14 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
     isStarted = 1;
     if (tileBitmapInfos[0].pixels == NULL) {
         MessageBox(NULL, "Error: tileBitMapInfo didn't initialize!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+
+    // INITIALIZE ENTITIES
+    errorCode = 0;
+    if ((errorCode = entity_init()) != ENTITY_ERR_SUCCESS) {
+        MessageBox(NULL, "Error: entity_init failed!", "Debug box", MB_ICONWARNING);
         cleanup();
         return -1;
     }
@@ -190,15 +227,30 @@ void refreshScreen() {
         return;
 
     // loop through tile_map and display all tiles to bufferBitmap
-    for (uint16_t y = 0; y < TILE_MAP_HEIGHT; y++) {
-        for (uint16_t x = 0; x < TILE_MAP_WIDTH; x++) {
+    for (uint16_t y = 0; y < VIEWPORT_HEIGHT + 1; y++) {
+        for (uint16_t x = 0; x < VIEWPORT_WIDTH + 1; x++) {
 
-            struct tile a = tile_map[coordToOffset(x, y, TILE_MAP_WIDTH)];
-            uint32_t* tileBitmap = tile_getBitmapFromID(1);
+            struct tile a = tile_map[coordToOffset(camX / TILE_IMAGE_WIDTH + x, camY / TILE_IMAGE_HEIGHT + y, TILE_MAP_WIDTH)];
+            uint32_t* tileBitmap = tile_getBitmapFromID(a.tileId);
 
             for (int i = 0; i < TILE_IMAGE_HEIGHT * TILE_IMAGE_WIDTH; i++) {
-                bufferBitmap[coordToOffset(x * TILE_IMAGE_WIDTH + (i % TILE_IMAGE_WIDTH), y * TILE_IMAGE_HEIGHT + (i / TILE_IMAGE_WIDTH), screenSizeX)] = tileBitmap[i];
+                // funky camera math
+                uint16_t pixelX = x * TILE_IMAGE_WIDTH + (i % TILE_IMAGE_WIDTH);
+                uint16_t pixelY = y * TILE_IMAGE_HEIGHT + (i / TILE_IMAGE_WIDTH);
+
+                // screen bounds checking
+                if (pixelX < camX || pixelX > camX + (VIEWPORT_WIDTH * TILE_IMAGE_WIDTH) || pixelY < camY || pixelY > camY + (VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT)) {
+                    continue;
+                }
+                bufferBitmap[coordToOffset(pixelX - camX, pixelY - camY, screenSizeX)] = tileBitmap[i];
             }
+        }
+    }
+
+    // loop through entities and display all entities to bufferBitmap
+    for (uint32_t i = 0; i < ENTITY_MAX_ENTITIES_ALIVE; i++) {
+        if (entityList[i].flags & ENTITY_FLAG_IS_VALID) {
+
         }
     }
 }
