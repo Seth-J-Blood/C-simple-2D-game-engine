@@ -21,8 +21,8 @@
 #define TILE_IMAGE_WIDTH                    32
 #define TILE_IMAGE_HEIGHT                   32
 
-#define TILE_MAP_WIDTH                      16
-#define TILE_MAP_HEIGHT                     16
+#define TILE_MAP_WIDTH                      32
+#define TILE_MAP_HEIGHT                     32
 
 #define COLOR_TRANSPARENT_VALUE             0x00FF00FF
 
@@ -33,16 +33,16 @@ struct tile_Image {
     //uint16_t sizeY;
     uint32_t* pixels;
 };
-struct tile_Image tileBitmapInfos[256]; // an array of tile images corresponding to (tileId - 1) (as zero doesn't need an image)
+extern struct tile_Image tileBitmapInfos[256]; // an array of tile images corresponding to (tileId - 1) (as zero doesn't need an image)
 
 struct tile {
     uint16_t tileId;
     uint8_t extra;
     uint8_t flags;
 };
-uint16_t        tile_mapSizeX;  // how many tiles wide the map is
-uint16_t        tile_mapSizeY;  // how many tiles long the map is
-struct tile*    tile_map;       // a pointer to the 2D tilemap array
+extern uint16_t        tile_mapSizeX;  // how many tiles wide the map is
+extern uint16_t        tile_mapSizeY;  // how many tiles long the map is
+extern struct tile*    tile_map;       // a pointer to the 2D tilemap array
 
 uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY);
 //uint32_t tile_setMap(uint16_t mapSizeX, uint16_t mapSizeY);

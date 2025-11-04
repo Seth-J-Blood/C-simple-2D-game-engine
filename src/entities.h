@@ -39,6 +39,6 @@ uint32_t entity_init();
 uint32_t entity_close();
 entity_t entity_spawn(uint32_t x, uint32_t y, struct entity newEntity);
 uint32_t entity_delete(entity_t entity);
-struct entity entityList[ENTITY_MAX_ENTITIES_ALIVE];
+extern struct entity entityList[ENTITY_MAX_ENTITIES_ALIVE];
 
 #endif

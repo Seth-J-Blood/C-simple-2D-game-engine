@@ -1,8 +1,8 @@
 #include "tiles.h"
 #include "entities.h"
 
-#define VIEWPORT_WIDTH      8
-#define VIEWPORT_HEIGHT     8
+#define VIEWPORT_WIDTH      16
+#define VIEWPORT_HEIGHT     16
 
 // GLOBAL VARIABLES //
 HWND winHandle;             // a handle to the window associated with this program
@@ -233,16 +233,18 @@ void refreshScreen() {
             struct tile a = tile_map[coordToOffset(camX / TILE_IMAGE_WIDTH + x, camY / TILE_IMAGE_HEIGHT + y, TILE_MAP_WIDTH)];
             uint32_t* tileBitmap = tile_getBitmapFromID(a.tileId);
 
-            for (int i = 0; i < TILE_IMAGE_HEIGHT * TILE_IMAGE_WIDTH; i++) {
-                // funky camera math
-                uint16_t pixelX = x * TILE_IMAGE_WIDTH + (i % TILE_IMAGE_WIDTH);
-                uint16_t pixelY = y * TILE_IMAGE_HEIGHT + (i / TILE_IMAGE_WIDTH);
+            for (int ty = 0; ty < TILE_IMAGE_HEIGHT; ty++) {
+                for (int tx = 0; tx < TILE_IMAGE_WIDTH; tx++) {
 
-                // screen bounds checking
-                if (pixelX < camX || pixelX > camX + (VIEWPORT_WIDTH * TILE_IMAGE_WIDTH) || pixelY < camY || pixelY > camY + (VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT)) {
-                    continue;
+                    int screenX = x * TILE_IMAGE_WIDTH + tx - (camX % TILE_IMAGE_WIDTH);
+                    int screenY = y * TILE_IMAGE_HEIGHT + ty - (camY % TILE_IMAGE_HEIGHT);
+
+                    // skip if off-screen
+                    if (screenX < 0 || screenY < 0 || screenX >= VIEWPORT_WIDTH * TILE_IMAGE_WIDTH || screenY >= VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT)
+                        continue;
+
+                    bufferBitmap[coordToOffset(screenX, screenY, screenSizeX)] = tileBitmap[ty * TILE_IMAGE_WIDTH + tx];
                 }
-                bufferBitmap[coordToOffset(pixelX - camX, pixelY - camY, screenSizeX)] = tileBitmap[i];
             }
         }
     }
@@ -250,7 +252,7 @@ void refreshScreen() {
     // loop through entities and display all entities to bufferBitmap
     for (uint32_t i = 0; i < ENTITY_MAX_ENTITIES_ALIVE; i++) {
         if (entityList[i].flags & ENTITY_FLAG_IS_VALID) {
-
+            if (entityList[i].imgX < entityList[i].x)
         }
     }
 }

@@ -1,5 +1,10 @@
 #include "tiles.h"
 
+struct tile_Image tileBitmapInfos[256];
+uint16_t        tile_mapSizeX;  // how many tiles wide the map is
+uint16_t        tile_mapSizeY;  // how many tiles long the map is
+struct tile*    tile_map;       // a pointer to the 2D tilemap array
+
 static uint16_t internal_flags = 0x0000;
 static TCHAR internal_current_directory[MAX_PATH];
 static TCHAR internal_directory[MAX_PATH];         // contains the directory of the .exe file and a null-terminator character

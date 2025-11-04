@@ -2,6 +2,8 @@
 
 #define INTERNAL_FLAG_INITIALIZED   0x00000001
 
+struct entity entityList[ENTITY_MAX_ENTITIES_ALIVE];
+
 static uint8_t internal_slotEntityList[ENTITY_MAX_ENTITIES_ALIVE / 8] = { 0 };
 static uint32_t internal_numAliveEntities = 0;
 static uint32_t internal_lastError = 0;
