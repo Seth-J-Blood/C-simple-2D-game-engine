@@ -1,8 +1,21 @@
 #include "tiles.h"
 #include "entities.h"
+#include "imageLoader.h"
 
-#define VIEWPORT_WIDTH      16
-#define VIEWPORT_HEIGHT     16
+#define WANTED_FPS                  30
+
+#define VIEWPORT_WIDTH              8
+#define VIEWPORT_HEIGHT             8
+
+#define GFLAG_MOVE_UP               0x00000001
+#define GFLAG_MOVE_LEFT             0x00000002
+#define GFLAG_MOVE_DOWN             0x00000004
+#define GFLAG_MOVE_RIGHT            0x00000008
+#define ANY_MOVE_FLAG               (GFLAG_MOVE_UP | GFLAG_MOVE_LEFT | GFLAG_MOVE_DOWN | GFLAG_MOVE_RIGHT)
+
+#define FRANK_MOVE_SPEED            4
+#define WALK_ANIM_TICKS_PER_SECOND  WANTED_FPS / 15
+
 
 // GLOBAL VARIABLES //
 HWND winHandle;             // a handle to the window associated with this program
@@ -32,6 +45,9 @@ BITMAPINFO bufferBitmapInfo = {
 };
 const CHAR* wndClassName = "2DSethGame2025";
 const CHAR* wndTitle = "Seth Blood's 2D Game Engine";
+TCHAR working_directory[MAX_PATH];         // contains the working directory to the 2D_GAME folder
+TCHAR current_directory[MAX_PATH];         // used to navigate directories
+UINT_PTR FPSTimerId = 1;
 
 uint16_t dispSizeX = 0;         // how wide the window is, in pixels
 uint16_t dispSizeY = 0;         // how tall the window is, in pixels
@@ -41,6 +57,12 @@ uint32_t* bufferBitmap = NULL;  // an array that contains the values of the buff
 uint32_t isStarted = 0;
 uint32_t camX = 0;
 uint32_t camY = 0;
+entity_t frank;
+entity_t william;
+uint32_t gFlags = 0;
+
+imageHandle_t frankWalkAnim[2] = {IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE};
+imageHandle_t williamDeathAnim[2] = {IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE};
 
 // FUNCTION PROTOTYPES //
 void cleanup();
@@ -48,37 +70,135 @@ void refreshScreen();
 uint32_t coordToOffset(uint16_t x, uint16_t y, uint16_t xMax);
 void showLastError(const char*);
 
+VOID CALLBACK TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
+    if (!isStarted) return;
+
+    struct entity* franky = &entityList[frank];
+
+    // CHECK MOVEMENT FLAGS, IF ANY ARE TRUE MOVE FRANK
+    if ((gFlags & GFLAG_MOVE_UP) && franky->y > 0) {
+        if (franky->y < FRANK_MOVE_SPEED) franky->y = 0;
+        else franky->y -= FRANK_MOVE_SPEED;
+    } 
+    if ((gFlags & GFLAG_MOVE_LEFT) && franky->x > 0) {
+        if (franky->x < FRANK_MOVE_SPEED) franky->x = 0;
+        else franky->x -= FRANK_MOVE_SPEED;
+        franky->flags |= ENTITY_FLAG_IS_FACING_LEFT;
+    } 
+    
+    if ((gFlags & GFLAG_MOVE_DOWN) && franky->y < TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY) {
+        if ((TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY) - franky->y < FRANK_MOVE_SPEED) franky->y = TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY;
+        else franky->y += FRANK_MOVE_SPEED;
+    } 
+    if ((gFlags & GFLAG_MOVE_RIGHT) && franky->x < TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX) {
+        if ((TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX) - franky->x < FRANK_MOVE_SPEED) franky->x = TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX;
+        else franky->x += FRANK_MOVE_SPEED;
+        franky->flags &= ~ENTITY_FLAG_IS_FACING_LEFT;
+    }
+
+    // if frank isn't moving, don't bother with animation stuff
+    if (!(gFlags & ANY_MOVE_FLAG)) {
+        franky->ticksSinceFrameChange = 0;
+        franky->frameNum = 1;
+        franky->image = frankWalkAnim[0];
+    } else {
+
+        // UPDATE FRAMES
+        if (franky->ticksSinceFrameChange >= WALK_ANIM_TICKS_PER_SECOND) {
+            franky->ticksSinceFrameChange = 0;
+            if (franky->frameNum == 0) {
+                franky->frameNum = 1;
+            } else {
+                franky->frameNum = 0;
+            }
+        }
+        franky->ticksSinceFrameChange++;
+        franky->image = frankWalkAnim[franky->frameNum];
+    }
+
+    // HANDLE CAMERA MOVEMENT
+    int64_t relativeCamX = ((int64_t) (franky->x)) - (VIEWPORT_WIDTH * TILE_IMAGE_WIDTH)/2 + (franky->imgX / 2);
+    if (relativeCamX < 0) 
+        relativeCamX = 0;
+    else if (relativeCamX >= (TILE_MAP_WIDTH * TILE_IMAGE_WIDTH) - (VIEWPORT_WIDTH * TILE_IMAGE_WIDTH))
+        relativeCamX = ((TILE_MAP_WIDTH * TILE_IMAGE_WIDTH) - (VIEWPORT_WIDTH * TILE_IMAGE_WIDTH));
+    camX = relativeCamX;
+
+
+    int64_t relativeCamY = ((int64_t) (franky->y)) - (VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT)/2 + (franky->imgY / 2);
+    if (relativeCamY < 0) 
+        relativeCamY = 0;
+    else if (relativeCamY >= (TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT) - (VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT))
+        relativeCamY = ((TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT) - (VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT));
+    camY = relativeCamY;
+
+    refreshScreen();
+    InvalidateRect(winHandle, &dispDimensions, FALSE);
+} 
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_KEYDOWN: {
             switch (wParam) {
                 case VK_UP:
-                    if (camY > 0)
-                        camY--;
-                    break;
+                case 'W':
+                    gFlags |= GFLAG_MOVE_UP;
+                break;
+
                 case VK_LEFT:
-                    if (camX > 0)
-                        camX--;
-                    break;
+                case 'A':
+                    gFlags |= GFLAG_MOVE_LEFT;
+                break;
+
                 case VK_DOWN:
-                    if (camY < (TILE_MAP_HEIGHT - VIEWPORT_HEIGHT) * TILE_IMAGE_HEIGHT)
-                        camY++;
-                    break;
+                case 'S':
+                    gFlags |= GFLAG_MOVE_DOWN;
+                break;
+
                 case VK_RIGHT:
-                    if (camX < (TILE_MAP_WIDTH - VIEWPORT_WIDTH) * TILE_IMAGE_WIDTH)
-                        camX++;
-                    break;
+                case 'D':
+                    gFlags |= GFLAG_MOVE_RIGHT;
+                break;
+
+                case 'E':
+
+                break;
+
+                case 'R':
+                    {
+                        TCHAR string[60];
+                        snprintf(string, 60, "CharX: %u, CharY: %u, CamX: %u, CamY: %u", entityList[frank].x, entityList[frank].y, camX, camY);
+                        MessageBox(winHandle, string, "Debug Box", MB_ICONWARNING);
+                    }
+                break;
             }
         }
-        InvalidateRect(winHandle, &dispDimensions, FALSE);
         return 0;
-        case WM_SIZE: {
-            // handle resizing //
+        case WM_KEYUP: {
+            switch (wParam) {
+                case VK_UP:
+                case 'W':
+                    gFlags &= ~GFLAG_MOVE_UP;
+                break;
+
+                case VK_LEFT:
+                case 'A':
+                    gFlags &= ~GFLAG_MOVE_LEFT;
+                break;
+
+                case VK_DOWN:
+                case 'S':
+                    gFlags &= ~GFLAG_MOVE_DOWN;
+                break;
+
+                case VK_RIGHT:
+                case 'D':
+                    gFlags &= ~GFLAG_MOVE_RIGHT;
+                break;
+            }
         }
         return 0;
         case WM_PAINT: {
-            refreshScreen();
-
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             // PAINT WINDOW, DO NOT PAINT AFTER ENDPAINT //
@@ -150,8 +270,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         WS_TILED | WS_MINIMIZEBOX | WS_SYSMENU | WS_VISIBLE,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        TILE_MAP_WIDTH * TILE_IMAGE_WIDTH,
-        TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT + GetSystemMetrics(SM_CYCAPTION),
+        VIEWPORT_WIDTH * TILE_IMAGE_WIDTH + 6,
+        VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT + GetSystemMetrics(SM_CYCAPTION) + 6,
         NULL,
         NULL,
         hInst,
@@ -181,6 +301,18 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
     SelectObject(bufferHdc, bufferHandle);
 
     UpdateWindow(winHandle);
+
+    // INITIALIZE VARIABLES //
+    // LOAD DIRECTORY //
+    uint16_t charsWritten = GetCurrentDirectory(MAX_PATH, working_directory); // this should NEVER fail for lack of memory space, but whatever
+    if (charsWritten == 0) {
+        MessageBox(NULL, "Error: failed to get working directory!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    
+    // chop off the number of character in '/bin' end of the directory to get the root folder //
+    working_directory[charsWritten - 4] = 0;     // -1 for changing number to index
     
     // INITIALIZE TILES
     uint32_t errorCode = 0;
@@ -189,7 +321,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         cleanup();
         return -1;
     }
-    isStarted = 1;
     if (tileBitmapInfos[0].pixels == NULL) {
         MessageBox(NULL, "Error: tileBitMapInfo didn't initialize!", "Debug box", MB_ICONWARNING);
         cleanup();
@@ -203,9 +334,85 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         cleanup();
         return -1;
     }
-    
-    // SET UP MAIN MESSAGE LOOP //
 
+    // CREATE FRANKENSTEIN ENTITY
+    struct entity newEntity = {
+        .x = 0,
+        .y = 0,
+        .imgX = 32,
+        .imgY = 32,
+        .image = IMGLDR_INVALID_IMAGE,
+        .flags = 0,
+        .id = 0,
+        .rotation = 0,
+        .ticksScared = 0,
+        .ticksSinceFrameChange = 0,
+        .frameNum = 0
+    };
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_idle.bmp");
+    imageHandle_t frankyImage = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (frankyImage == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load franky image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    frankWalkAnim[0] = frankyImage;
+    newEntity.image = frankyImage;
+    frank = entity_spawn(0, 0, newEntity);
+
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_move.bmp");
+    frankWalkAnim[1] = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (frankWalkAnim[1] == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load franky move image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/william-alive.bmp");
+    williamDeathAnim[0] = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if ( williamDeathAnim[0] == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load william alive image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    newEntity.image = williamDeathAnim[0];
+
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/william-deaad.bmp");
+    williamDeathAnim[1] = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (williamDeathAnim[1] == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load william alive image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    william = entity_spawn(256, 256, newEntity);
+    if (william == ENTITY_INVALID_ENTITY) {
+        MessageBox(NULL, "Error: could not spawn william!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+
+    isStarted = 1;
+
+    // SET UP FPS TIMER
+    SetTimer(winHandle, FPSTimerId, 1000 / WANTED_FPS, &TimerProc);
+
+    // SET UP MAIN MESSAGE LOOP //
     MSG winMsg;
     InvalidateRect(winHandle, &dispDimensions, FALSE);
     while (GetMessage(&winMsg, winHandle, 0, 0)) 
@@ -230,29 +437,68 @@ void refreshScreen() {
     for (uint16_t y = 0; y < VIEWPORT_HEIGHT + 1; y++) {
         for (uint16_t x = 0; x < VIEWPORT_WIDTH + 1; x++) {
 
+            if (camX / TILE_IMAGE_WIDTH + x >= TILE_MAP_WIDTH || camY / TILE_IMAGE_HEIGHT + y >= TILE_MAP_HEIGHT) continue;
+
             struct tile a = tile_map[coordToOffset(camX / TILE_IMAGE_WIDTH + x, camY / TILE_IMAGE_HEIGHT + y, TILE_MAP_WIDTH)];
             uint32_t* tileBitmap = tile_getBitmapFromID(a.tileId);
+            
+            for (int32_t ty = 0; ty < TILE_IMAGE_HEIGHT; ty++) {
+                for (int32_t tx = 0; tx < TILE_IMAGE_WIDTH; tx++) {
 
-            for (int ty = 0; ty < TILE_IMAGE_HEIGHT; ty++) {
-                for (int tx = 0; tx < TILE_IMAGE_WIDTH; tx++) {
-
-                    int screenX = x * TILE_IMAGE_WIDTH + tx - (camX % TILE_IMAGE_WIDTH);
-                    int screenY = y * TILE_IMAGE_HEIGHT + ty - (camY % TILE_IMAGE_HEIGHT);
+                    int32_t screenX = x * TILE_IMAGE_WIDTH + tx - (camX % (TILE_IMAGE_WIDTH));
+                    int32_t screenY = y * TILE_IMAGE_HEIGHT + ty - (camY % (TILE_IMAGE_HEIGHT));
 
                     // skip if off-screen
                     if (screenX < 0 || screenY < 0 || screenX >= VIEWPORT_WIDTH * TILE_IMAGE_WIDTH || screenY >= VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT)
                         continue;
 
-                    bufferBitmap[coordToOffset(screenX, screenY, screenSizeX)] = tileBitmap[ty * TILE_IMAGE_WIDTH + tx];
+                    bufferBitmap[coordToOffset(screenX, screenY, screenSizeX)] = tileBitmap[(ty) * TILE_IMAGE_WIDTH + (tx)];
                 }
             }
         }
     }
 
+
     // loop through entities and display all entities to bufferBitmap
     for (uint32_t i = 0; i < ENTITY_MAX_ENTITIES_ALIVE; i++) {
+        
         if (entityList[i].flags & ENTITY_FLAG_IS_VALID) {
-            if (entityList[i].imgX < entityList[i].x)
+            int64_t relativeEntityX = (int64_t) entityList[i].x - camX;
+            int64_t relativeEntityY = (int64_t) entityList[i].y - camY;
+
+            // add image dimensions for partial draws; if a creature is half off the screen, still display the rest of its pixels.
+            // since coordinate represents the top-left of the entity, no partial draw can occur if the entity's coords are bigger than the screen
+            if (relativeEntityX + entityList[i].imgX < 0 || relativeEntityX >= (TILE_IMAGE_WIDTH * VIEWPORT_WIDTH ) || relativeEntityY + entityList[i].imgY < 0 || relativeEntityY >= (TILE_IMAGE_HEIGHT * VIEWPORT_HEIGHT)) 
+                continue;
+
+
+            // DRAW ENTITY - IF PIXEL == 0x00FF00FF, DON'T DRAW
+            uint32_t* entityImage = NULL;
+            // fetch entity image. If failed, just skip entity
+            if (imageLoader_fetchImage(entityList[i].image, &entityImage) != IMGLDR_ERR_SUCCESS) {
+                continue;
+            }
+
+            // if entity is facing left, draw X backwards
+            if (entityList[i].flags & ENTITY_FLAG_IS_FACING_LEFT) {
+                for (int64_t y = 0; y < entityList[i].imgY; y++) {
+                    for (int64_t x = 0; x < entityList[i].imgX; x++) {
+                        if (entityImage[coordToOffset(x, y, entityList[i].imgX)] == 0x00FF00FF || relativeEntityX + x < 0 || relativeEntityX + x >= (TILE_IMAGE_WIDTH * VIEWPORT_WIDTH) || relativeEntityY + y < 0 || relativeEntityY + y >= (TILE_IMAGE_HEIGHT * VIEWPORT_HEIGHT))
+                            continue;
+
+                        bufferBitmap[coordToOffset(relativeEntityX + ((entityList[i].imgX - 1) - x), relativeEntityY + y, screenSizeX)] = entityImage[coordToOffset(x, y, entityList[i].imgX)];
+                    }
+                }  
+            } else {
+                for (int64_t y = 0; y < entityList[i].imgY; y++) {
+                    for (int64_t x = 0; x < entityList[i].imgX; x++) {
+                        if (entityImage[coordToOffset(x, y, entityList[i].imgX)] == 0x00FF00FF || relativeEntityX + x < 0 || relativeEntityX + x >= (TILE_IMAGE_WIDTH * VIEWPORT_WIDTH ) || relativeEntityY + y < 0 || relativeEntityY + y >= (TILE_IMAGE_HEIGHT * VIEWPORT_HEIGHT))
+                            continue;
+
+                        bufferBitmap[coordToOffset(relativeEntityX + x, relativeEntityY + y, screenSizeX)] = entityImage[coordToOffset(x, y, entityList[i].imgX)];
+                    }
+                }  
+            }
         }
     }
 }

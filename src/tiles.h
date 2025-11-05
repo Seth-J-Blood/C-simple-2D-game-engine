@@ -21,8 +21,8 @@
 #define TILE_IMAGE_WIDTH                    32
 #define TILE_IMAGE_HEIGHT                   32
 
-#define TILE_MAP_WIDTH                      32
-#define TILE_MAP_HEIGHT                     32
+#define TILE_MAP_WIDTH                      16
+#define TILE_MAP_HEIGHT                     16
 
 #define COLOR_TRANSPARENT_VALUE             0x00FF00FF
 

@@ -23,11 +23,11 @@
 typedef uint32_t imageHandle_t;
 
 // initializes the image loader function
-uint32_t imageloader_init(HDC hdc);
+uint32_t imageLoader_init(HDC hdc);
 uint32_t imageLoader_close();
 imageHandle_t imageLoader_newImage(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight);     // requires absolute filepath from root!
 imageHandle_t imageLoader_newImage_output(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight, uint32_t** output);     // requires absolute filepath from root!
-imageHandle_t imageLoader_fetchImage(imageHandle_t image, uint32_t** output);
+uint32_t imageLoader_fetchImage(imageHandle_t image, uint32_t** output);
 uint32_t imageLoader_deleteImage(imageHandle_t image);
 uint32_t imageLoader_getLastError();
 

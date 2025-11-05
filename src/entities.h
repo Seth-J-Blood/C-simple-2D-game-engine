@@ -21,6 +21,8 @@
 #define ENTITY_INVALID_ENTITY                   -1
 
 #define ENTITY_FLAG_IS_VALID                    1
+#define ENTITY_FLAG_IS_MOVING                   2
+#define ENTITY_FLAG_IS_FACING_LEFT              4
 
 typedef uint32_t entity_t;
 
@@ -30,9 +32,12 @@ struct entity {
     uint32_t imgX;
     uint32_t imgY;
     imageHandle_t image;
-    uint16_t flags;
+    uint8_t flags;
+    uint8_t id;
     uint8_t rotation;
     uint8_t ticksScared;
+    uint8_t ticksSinceFrameChange;
+    uint8_t frameNum;
 };
 
 uint32_t entity_init();

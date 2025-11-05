@@ -19,7 +19,7 @@ uint32_t tile_init(HDC hdc, uint16_t mapSizeX, uint16_t mapSizeY) {
         return TILE_ERR_ALREADY_INITIALIZED;
     }
 
-    uint32_t initError = imageloader_init(hdc);
+    uint32_t initError = imageLoader_init(hdc);
     if (initError != IMGLDR_ERR_SUCCESS && initError != IMGLDR_ERR_ALREADY_INITIALIZED) {
         internal_lastError = TILE_ERR_IMAGELOADER_FAILED_INIT;
         return TILE_ERR_IMAGELOADER_FAILED_INIT;

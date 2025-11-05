@@ -29,12 +29,16 @@ static BITMAPINFO internal_bufferBitmapInfo = {
     .bmiColors = 0
 };
 
+static uint8_t internal_isSlotFilled(uint32_t index) {
+    return internal_allocatedArraySlots[index / 8] & (1 << (index & 0b00000111));
+}
+
 static int64_t internal_getFirstFreeSlot() {
     for (uint32_t i = 0; i < IMGLDR_MAX_IMAGES_DEFINED / 8; i++) {
         if (internal_allocatedArraySlots[i] != 0xFF) {
             // find first zero bit
-            for (uint8_t mask = 7; mask > 0; mask--) {
-                if (!(internal_allocatedArraySlots[i] & (1 << mask)))
+            for (uint8_t mask = 0; mask < 8; mask++) {
+                if (!((internal_allocatedArraySlots[i]) & (1 << mask)))
                     return i * 8 + mask;
             }
         }
@@ -47,7 +51,7 @@ uint32_t imageLoader_getLastError(){
     return internal_lastError;
 }
 
-uint32_t imageloader_init(HDC hdc) {
+uint32_t imageLoader_init(HDC hdc) {
     if (internal_flags & INTERN_FLAG_INITIALIZED) {
         internal_lastError = IMGLDR_ERR_ALREADY_INITIALIZED;
         return IMGLDR_ERR_ALREADY_INITIALIZED;
@@ -69,60 +73,7 @@ uint32_t imageloader_init(HDC hdc) {
     return IMGLDR_ERR_SUCCESS;    
 }
 
-imageHandle_t imageHandler_newImage(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight) {
-    if (!(internal_flags & INTERN_FLAG_INITIALIZED)) {
-        internal_lastError = IMGLDR_ERR_NOT_INITIALIZED;
-        return IMGLDR_INVALID_IMAGE;
-    }
-
-    // sanity check
-    if (imageWidth == 0 || imageHeight == 0) {
-        internal_lastError = IMGLDR_ERR_BAD_PARAMETERS;
-        return IMGLDR_INVALID_IMAGE;
-    }
-
-    // if max images defined, error
-    if (internal_allocatedImages >= IMGLDR_MAX_IMAGES_DEFINED) {
-        internal_lastError = IMGLDR_ERR_NOT_INITIALIZED;
-        return IMGLDR_INVALID_IMAGE;
-    }
-
-    // FIND FIRST FREE SLOT
-    int64_t freeSlot = internal_getFirstFreeSlot();
-    if (freeSlot == -1) {
-        // uhh this should never happen, but frick it we ball
-        internal_lastError = IMGLDR_ERR_NOT_INITIALIZED;
-        return IMGLDR_INVALID_IMAGE;
-    }
-
-    // RESERVE RAM
-    if ((internal_allocatedArray[freeSlot] = malloc(imageWidth * imageHeight * sizeof(uint32_t))) == NULL) {
-        // no memory, malloc failed
-        internal_lastError = IMGLDR_ERR_NO_MEMORY;
-        return IMGLDR_INVALID_IMAGE;
-    }
-    
-    // LOAD IMAGE FROM DISK
-    internal_bufferBitmapInfo.bmiHeader.biWidth = imageWidth;
-    internal_bufferBitmapInfo.bmiHeader.biWidth = -imageHeight;
-    HBITMAP image = LoadImageA(NULL, absolute_filename, IMAGE_BITMAP, imageWidth, imageHeight, LR_LOADFROMFILE);
-    if (image == NULL) {
-        // whoopsie daisy load image failed
-        free(internal_allocatedArray[freeSlot]);
-        internal_lastError = IMGLDR_ERR_DIRECTORY_DAMAGED;
-        return IMGLDR_INVALID_IMAGE;
-    }
-
-    GetDIBits(internal_hdc, image, 0, imageHeight, internal_allocatedArray[freeSlot], &internal_bufferBitmapInfo, DIB_RGB_COLORS);
-    DeleteObject(image);
-
-    internal_allocatedArraySlots[freeSlot/8] |= (0b10000000 >> (freeSlot & 0b00000111));
-    internal_allocatedImages++;
-    internal_lastError = IMGLDR_ERR_SUCCESS;
-    return freeSlot;
-}
-
-imageHandle_t imageLoader_newImage_output(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight, uint32_t** output) {
+imageHandle_t imageLoader_newImage(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight) {
     if (!(internal_flags & INTERN_FLAG_INITIALIZED)) {
         internal_lastError = IMGLDR_ERR_NOT_INITIALIZED;
         return IMGLDR_INVALID_IMAGE;
@@ -168,13 +119,19 @@ imageHandle_t imageLoader_newImage_output(const PTCHAR absolute_filename, uint16
     }
 
     GetDIBits(internal_hdc, image, 0, imageHeight, internal_allocatedArray[freeSlot], &internal_bufferBitmapInfo, DIB_RGB_COLORS);
-    *(output) = internal_allocatedArray[freeSlot];
     DeleteObject(image);
 
-    internal_allocatedArraySlots[freeSlot/8] |= (0b10000000 >> (freeSlot & 0b00000111));
+    internal_allocatedArraySlots[freeSlot/8] |= (0b00000001 << (freeSlot & 0b00000111));
     internal_allocatedImages++;
     internal_lastError = IMGLDR_ERR_SUCCESS;
     return freeSlot;
+}
+
+imageHandle_t imageLoader_newImage_output(const PTCHAR absolute_filename, uint16_t imageWidth, uint16_t imageHeight, uint32_t** output) {
+    imageHandle_t img = imageLoader_newImage(absolute_filename, imageWidth, imageHeight);
+    *(output) = internal_allocatedArray[img];
+
+    return img;
 }
 
 uint32_t imageLoader_fetchImage(imageHandle_t image, uint32_t** output) {
@@ -183,7 +140,7 @@ uint32_t imageLoader_fetchImage(imageHandle_t image, uint32_t** output) {
         return IMGLDR_ERR_NOT_INITIALIZED;
     }
 
-    if (!(internal_allocatedArraySlots[image / 8] & (0b10000000 >> (image & 0b00000111)))) {
+    if (!internal_isSlotFilled(image)) {
         internal_lastError = IMGLDR_ERR_IMAGE_NOT_LOADED;
         return IMGLDR_ERR_IMAGE_NOT_LOADED;
     }
@@ -200,13 +157,13 @@ uint32_t imageLoader_deleteImage(imageHandle_t image) {
         return IMGLDR_ERR_NOT_INITIALIZED;
     }
 
-    if (!(internal_allocatedArraySlots[image / 8] & (0b10000000 >> (image & 0b00000111)))) {
+    if (!internal_isSlotFilled(image)) {
         internal_lastError = IMGLDR_ERR_IMAGE_NOT_LOADED;
         return IMGLDR_ERR_IMAGE_NOT_LOADED;
     }
 
     free(internal_allocatedArray[image]);
-    internal_allocatedArraySlots[image / 8] &= (~(0b10000000 >> (image & 0b00000111)));
+    internal_allocatedArraySlots[image / 8] &= (~(1 << (image & 0b00000111)));
 
     internal_lastError = IMGLDR_ERR_SUCCESS;
     return IMGLDR_ERR_SUCCESS;
@@ -222,9 +179,9 @@ uint32_t imageloader_close() {
     for (uint32_t i = 0; i < IMGLDR_MAX_IMAGES_DEFINED / 8; i++) {
         // could optimize this but whatever
         if (internal_allocatedArraySlots[i] != 0x00) {
-            for (uint8_t mask = 7; mask >= 0; mask--) {
+            for (uint8_t mask = 0; mask < 8; mask++) {
                 if (internal_allocatedArraySlots[i] & (1 << mask)) {
-                    free(internal_allocatedArray[i * 8 + (7 - mask)]);
+                    free(internal_allocatedArray[i * 8 + mask]);
                     internal_allocatedArraySlots[i] &= ~(1 << mask);
                 }
             }
