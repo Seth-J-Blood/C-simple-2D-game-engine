@@ -4,7 +4,7 @@
 #ifndef SETH_B_2D_GAME
 #define SETH_B_2D_GAME
 
-#define NUM_TILE_IMAGES                     8
+#define NUM_TILE_IMAGES                     9
 #define EXE_FILENAME_LENGTH                 4 + 3 // "main.exe"
 
 #define TILE_FLAG_INITIALIZED               0x0001
@@ -21,8 +21,8 @@
 #define TILE_IMAGE_WIDTH                    32
 #define TILE_IMAGE_HEIGHT                   32
 
-#define TILE_MAP_WIDTH                      16
-#define TILE_MAP_HEIGHT                     16
+#define TILE_MAP_WIDTH                      32
+#define TILE_MAP_HEIGHT                     32
 
 #define COLOR_TRANSPARENT_VALUE             0x00FF00FF
 

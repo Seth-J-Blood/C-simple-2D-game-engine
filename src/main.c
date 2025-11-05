@@ -11,6 +11,7 @@
 #define GFLAG_MOVE_LEFT             0x00000002
 #define GFLAG_MOVE_DOWN             0x00000004
 #define GFLAG_MOVE_RIGHT            0x00000008
+#define GFLAG_KILL_ANIM_ACTIVE      0x00000010
 #define ANY_MOVE_FLAG               (GFLAG_MOVE_UP | GFLAG_MOVE_LEFT | GFLAG_MOVE_DOWN | GFLAG_MOVE_RIGHT)
 
 #define FRANK_MOVE_SPEED            4
@@ -24,8 +25,8 @@ HBITMAP bufferHandle;       // a handle to the bitmap used to buffer screen upda
 const RECT dispDimensions = {
     .left = 0,
     .top = 0,
-    .right = TILE_IMAGE_WIDTH * TILE_MAP_WIDTH,
-    .bottom = TILE_IMAGE_HEIGHT * TILE_MAP_HEIGHT
+    .right = TILE_IMAGE_WIDTH * VIEWPORT_WIDTH,
+    .bottom = TILE_IMAGE_HEIGHT * VIEWPORT_HEIGHT
 };
 BITMAPINFO bufferBitmapInfo = {
     .bmiHeader = {
@@ -61,7 +62,7 @@ entity_t frank;
 entity_t william;
 uint32_t gFlags = 0;
 
-imageHandle_t frankWalkAnim[2] = {IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE};
+imageHandle_t frankWalkAnim[3] = {IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE};
 imageHandle_t williamDeathAnim[2] = {IMGLDR_INVALID_IMAGE, IMGLDR_INVALID_IMAGE};
 
 // FUNCTION PROTOTYPES //
@@ -70,29 +71,102 @@ void refreshScreen();
 uint32_t coordToOffset(uint16_t x, uint16_t y, uint16_t xMax);
 void showLastError(const char*);
 
+uint8_t helper_canMoveHere(int64_t newX, int64_t newY, struct entity* e) {
+    int32_t tileLeft   = (newX + 8) / TILE_IMAGE_WIDTH;
+    int32_t tileRight  = (newX + e->imgX - 9) / TILE_IMAGE_WIDTH;
+    int32_t tileTop    = (newY + 8) / TILE_IMAGE_HEIGHT;
+    int32_t tileBottom = (newY + e->imgY - 9) / TILE_IMAGE_HEIGHT;
+
+    // Clamp to map bounds (avoid OOB reads)
+    if (tileLeft < 0 || tileTop < 0 ||
+        tileRight >= TILE_MAP_WIDTH || tileBottom >= TILE_MAP_HEIGHT)
+        return FALSE;
+
+    // Check all intersecting tiles
+    for (int ty = tileTop; ty <= tileBottom; ty++) {
+        for (int tx = tileLeft; tx <= tileRight; tx++) {
+            struct tile t = tile_map[coordToOffset(tx, ty, TILE_MAP_WIDTH)];
+            if (t.tileId >= 9) return FALSE;  // blocked tile
+        }
+    }
+    return TRUE;
+}
+
 VOID CALLBACK TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     if (!isStarted) return;
 
     struct entity* franky = &entityList[frank];
 
+    if (gFlags & GFLAG_KILL_ANIM_ACTIVE) {
+        if (franky->ticksSinceFrameChange < 40) {
+            franky->image = frankWalkAnim[2];
+        } else if (franky->ticksSinceFrameChange < 80) {
+            franky->image = frankWalkAnim[0];
+            entityList[william].image = williamDeathAnim[1];
+        } else if (franky->ticksSinceFrameChange < 82) {
+            franky->flags &= ~ENTITY_FLAG_IS_FACING_LEFT;
+            franky->image = frankWalkAnim[1];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 84) {
+            franky->image = frankWalkAnim[0];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 86) {
+            franky->image = frankWalkAnim[1];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 88) {
+            franky->image = frankWalkAnim[0];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 90) {
+            franky->image = frankWalkAnim[1];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 92) {
+            franky->image = frankWalkAnim[0];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 94) {
+            franky->image = frankWalkAnim[1];
+            franky->x += FRANK_MOVE_SPEED;
+        } else if (franky->ticksSinceFrameChange < 96) {
+            franky->image = frankWalkAnim[0];
+            franky->x += FRANK_MOVE_SPEED;
+        }
+
+        franky->ticksSinceFrameChange++;
+        refreshScreen();
+        InvalidateRect(winHandle, &dispDimensions, FALSE);
+        return;
+    }
+
+
     // CHECK MOVEMENT FLAGS, IF ANY ARE TRUE MOVE FRANK
-    if ((gFlags & GFLAG_MOVE_UP) && franky->y > 0) {
-        if (franky->y < FRANK_MOVE_SPEED) franky->y = 0;
-        else franky->y -= FRANK_MOVE_SPEED;
-    } 
-    if ((gFlags & GFLAG_MOVE_LEFT) && franky->x > 0) {
-        if (franky->x < FRANK_MOVE_SPEED) franky->x = 0;
-        else franky->x -= FRANK_MOVE_SPEED;
+    if ((gFlags & GFLAG_MOVE_UP)) {
+        int64_t newY = franky->y - FRANK_MOVE_SPEED;
+        if (newY < 0) newY = 0;
+        if (helper_canMoveHere(franky->x, newY, franky))
+            franky->y = newY;
+    }
+
+    if ((gFlags & GFLAG_MOVE_DOWN)) {
+        int64_t newY = franky->y + FRANK_MOVE_SPEED;
+        if (newY > TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - (franky->imgY - 8))
+            newY = TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - (franky->imgY - 8);
+        if (helper_canMoveHere(franky->x, newY, franky))
+            franky->y = newY;
+    }
+
+    if ((gFlags & GFLAG_MOVE_LEFT)) {
+        int64_t newX = franky->x - FRANK_MOVE_SPEED;
+        if (newX < 0) newX = 0;
+        if (helper_canMoveHere(newX, franky->y, franky))
+            franky->x = newX;
         franky->flags |= ENTITY_FLAG_IS_FACING_LEFT;
-    } 
-    
-    if ((gFlags & GFLAG_MOVE_DOWN) && franky->y < TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY) {
-        if ((TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY) - franky->y < FRANK_MOVE_SPEED) franky->y = TILE_MAP_HEIGHT * TILE_IMAGE_HEIGHT - franky->imgY;
-        else franky->y += FRANK_MOVE_SPEED;
-    } 
-    if ((gFlags & GFLAG_MOVE_RIGHT) && franky->x < TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX) {
-        if ((TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX) - franky->x < FRANK_MOVE_SPEED) franky->x = TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - franky->imgX;
-        else franky->x += FRANK_MOVE_SPEED;
+    }
+
+    if ((gFlags & GFLAG_MOVE_RIGHT)) {
+        int64_t newX = franky->x + FRANK_MOVE_SPEED;
+        if (newX > TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - (franky->imgX - 8))
+            newX = TILE_MAP_WIDTH * TILE_IMAGE_WIDTH - (franky->imgX - 8);
+        if (helper_canMoveHere(newX, franky->y, franky))
+            franky->x = newX;
         franky->flags &= ~ENTITY_FLAG_IS_FACING_LEFT;
     }
 
@@ -161,7 +235,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 break;
 
                 case 'E':
-
+                    gFlags |= GFLAG_KILL_ANIM_ACTIVE;
+                    entityList[frank].ticksSinceFrameChange = 0;
+                    entityList[frank].image = frankWalkAnim[2];
                 break;
 
                 case 'R':
@@ -169,6 +245,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                         TCHAR string[60];
                         snprintf(string, 60, "CharX: %u, CharY: %u, CamX: %u, CamY: %u", entityList[frank].x, entityList[frank].y, camX, camY);
                         MessageBox(winHandle, string, "Debug Box", MB_ICONWARNING);
+
+                        for (uint32_t i = 0; i < ENTITY_MAX_ENTITIES_ALIVE; i++) {
+                            if (entityList[i].flags & ENTITY_FLAG_IS_VALID)
+                                MessageBox(winHandle, "Found an entity", "Debug Box", MB_ICONWARNING);
+                        }
                     }
                 break;
             }
@@ -335,7 +416,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         return -1;
     }
 
-    // CREATE FRANKENSTEIN ENTITY
     struct entity newEntity = {
         .x = 0,
         .y = 0,
@@ -349,33 +429,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         .ticksSinceFrameChange = 0,
         .frameNum = 0
     };
-    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_idle.bmp");
-    imageHandle_t frankyImage = imageLoader_newImage(
-        current_directory,
-        32,
-        32
-    );
-    if (frankyImage == IMGLDR_INVALID_IMAGE) {
-        MessageBox(NULL, "Error: could not load franky image!", "Debug box", MB_ICONWARNING);
-        cleanup();
-        return -1;
-    }
-    frankWalkAnim[0] = frankyImage;
-    newEntity.image = frankyImage;
-    frank = entity_spawn(0, 0, newEntity);
 
-    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_move.bmp");
-    frankWalkAnim[1] = imageLoader_newImage(
-        current_directory,
-        32,
-        32
-    );
-    if (frankWalkAnim[1] == IMGLDR_INVALID_IMAGE) {
-        MessageBox(NULL, "Error: could not load franky move image!", "Debug box", MB_ICONWARNING);
-        cleanup();
-        return -1;
-    }
-
+    // CREATE WILLIAM ENTITY //
     snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/william-alive.bmp");
     williamDeathAnim[0] = imageLoader_newImage(
         current_directory,
@@ -400,12 +455,54 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdsh
         cleanup();
         return -1;
     }
-    william = entity_spawn(256, 256, newEntity);
+    william = entity_spawn(992, 608, newEntity);
     if (william == ENTITY_INVALID_ENTITY) {
         MessageBox(NULL, "Error: could not spawn william!", "Debug box", MB_ICONWARNING);
         cleanup();
         return -1;
     }
+
+    // CREATE FRANKENSTEIN ENTITY //
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_idle.bmp");
+    imageHandle_t frankyImage = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (frankyImage == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load franky image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    frankWalkAnim[0] = frankyImage;
+    newEntity.image = frankyImage;
+    frank = entity_spawn(992, 608, newEntity);
+
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_move.bmp");
+    frankWalkAnim[1] = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (frankWalkAnim[1] == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load franky move image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+
+    snprintf(current_directory, MAX_PATH, "%s%s", working_directory, "/images/entities/freakystein_kill.bmp");
+    frankWalkAnim[2] = imageLoader_newImage(
+        current_directory,
+        32,
+        32
+    );
+    if (frankWalkAnim[2] == IMGLDR_INVALID_IMAGE) {
+        MessageBox(NULL, "Error: could not load franky kill image!", "Debug box", MB_ICONWARNING);
+        cleanup();
+        return -1;
+    }
+    
+    // DONE CREATING ENTITIES //
 
     isStarted = 1;
 
@@ -432,6 +529,15 @@ void cleanup() {
 void refreshScreen() {
     if (!isStarted)
         return;
+
+    if ((gFlags & GFLAG_KILL_ANIM_ACTIVE) && entityList[frank].ticksSinceFrameChange >= 40 && entityList[frank].ticksSinceFrameChange <= 43) {
+        for (uint16_t y = 0; y < VIEWPORT_HEIGHT * TILE_IMAGE_HEIGHT; y++) {
+            for (uint16_t x = 0; x < VIEWPORT_WIDTH * TILE_IMAGE_WIDTH; x++) {
+                bufferBitmap[coordToOffset(x, y, screenSizeX)] = 0x00320000;
+            }
+        }
+        return;
+    }
 
     // loop through tile_map and display all tiles to bufferBitmap
     for (uint16_t y = 0; y < VIEWPORT_HEIGHT + 1; y++) {

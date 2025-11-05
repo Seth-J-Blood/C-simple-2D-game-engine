@@ -10,15 +10,16 @@ static uint32_t internal_lastError = 0;
 static uint32_t internal_flags = 0;
 
 static int64_t internal_getFirstFreeSlot() {
-    for (uint32_t i = 0; i < ENTITY_MAX_ENTITIES_ALIVE / 8; i++) {
+    for (uint32_t i = 0; i < IMGLDR_MAX_IMAGES_DEFINED / 8; i++) {
         if (internal_slotEntityList[i] != 0xFF) {
             // find first zero bit
-            for (uint8_t mask = 7; mask > 0; mask--) {
-                if (!(internal_slotEntityList[i] & (1 << mask)))
+            for (uint8_t mask = 0; mask < 8; mask++) {
+                if (!((internal_slotEntityList[i]) & (1 << mask)))
                     return i * 8 + mask;
             }
         }
     }
+
     return -1;
 }
 
@@ -85,8 +86,10 @@ entity_t entity_spawn(uint32_t x, uint32_t y, struct entity newEntity) {
     }
 
     // copy entity :D
+    newEntity.x = x;
+    newEntity.y = y;
     internal_numAliveEntities++;
-    internal_slotEntityList[freeSlot / 8] |= ((0b10000000 >> (freeSlot & 0b00000111)));
+    internal_slotEntityList[freeSlot / 8] |= ((1 << (freeSlot & 0b00000111)));
     entityList[freeSlot] = newEntity;
     entityList[freeSlot].flags |= ENTITY_FLAG_IS_VALID;
     
